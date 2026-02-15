@@ -24,7 +24,7 @@ from sklearn.metrics import (
 )
 
 # Custom model builder
-from model.models import get_model
+from models import get_model
 
 
 # Page configuration
