@@ -1,58 +1,64 @@
+# Basic imports for building machine learning pipelines
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, FunctionTransformer
+
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.preprocessing import FunctionTransformer
+
 from xgboost import XGBClassifier
 import numpy as np
 
 
-def build_pipeline(model, X, force_dense=False):
+# Helper function to prepare column transformation
+def prepare_transformer(df_input):
 
-    categorical_cols = X.select_dtypes(include=["object"]).columns
-    numeric_cols = X.select_dtypes(exclude=["object"]).columns
+    # Separate columns based on data type
+    categorical_fields = df_input.select_dtypes(include=["object"]).columns
+    numerical_fields = df_input.select_dtypes(exclude=["object"]).columns
 
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("num", "passthrough", numeric_cols),
+    transformer = ColumnTransformer(
+        [
+            ("numeric_block", "passthrough", numerical_fields),
             (
-                "cat",
-                OneHotEncoder(
-                    handle_unknown="ignore",
-                    sparse_output=False
-                ),
-                categorical_cols
-            )
+                "categorical_block",
+                OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                categorical_fields
+            ),
         ]
     )
 
-    steps = [("preprocessor", preprocessor)]
-
-    # Force dense conversion for Naive Bayes
-    if force_dense:
-        steps.append(
-            ("to_dense", FunctionTransformer(lambda x: np.asarray(x)))
-        )
-
-    steps.append(("classifier", model))
-
-    return Pipeline(steps)
+    return transformer
 
 
-def get_model(model_name, X):
+# Function to assemble the full pipeline
+def assemble_pipeline(estimator, df_input, dense_required=False):
 
-    if model_name == "Naive Bayes":
-        return build_pipeline(
-            GaussianNB(),
-            X,
-            force_dense=True   # IMPORTANT
-        )
+    column_transformer = prepare_transformer(df_input)
 
-    models = {
+    pipeline_components = [
+        ("feature_step", column_transformer)
+    ]
+
+    # Some algorithms need dense input format
+    if dense_required:
+        dense_step = FunctionTransformer(lambda data: np.asarray(data))
+        pipeline_components.append(("dense_step", dense_step))
+
+    pipeline_components.append(("estimator_step", estimator))
+
+    model_pipeline = Pipeline(pipeline_components)
+
+    return model_pipeline
+
+
+# Function to choose algorithm and return ready pipeline
+def fetch_pipeline(algorithm_label, df_input):
+
+    algorithm_pool = {
         "Logistic Regression": LogisticRegression(max_iter=1000),
 
         "Decision Tree": DecisionTreeClassifier(
@@ -79,4 +85,14 @@ def get_model(model_name, X):
         )
     }
 
-    return build_pipeline(models[model_name], X)
+    # Handle Naive Bayes separately
+    if algorithm_label == "Naive Bayes":
+        return assemble_pipeline(
+            GaussianNB(),
+            df_input,
+            dense_required=True
+        )
+
+    selected_estimator = algorithm_pool[algorithm_label]
+
+    return assemble_pipeline(selected_estimator, df_input)

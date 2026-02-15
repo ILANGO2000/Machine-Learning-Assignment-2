@@ -1,9 +1,17 @@
+# Core UI framework
 import streamlit as st
+
+# Data handling
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 
+# Visualization libraries
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Machine learning utilities
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -14,42 +22,44 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix
 )
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.preprocessing import LabelEncoder
+
+# Custom model builder
 from model.models import get_model
 
-st.set_page_config(page_title="Bank ML Dashboard", layout="wide")
 
-st.title("📊 Bank Marketing ML Dashboard")
+# Page configuration
+st.set_page_config(page_title="Breast Cancer Diagnosis Dashboard", layout="wide")
 
-uploaded_file = st.file_uploader("Upload CSV Dataset", type="csv")
+st.header("Machine Learning Classification Studio")
 
-if uploaded_file:
+uploaded_csv = st.file_uploader("Upload your dataset in CSV format", type=["csv"])
 
-    df = pd.read_csv(uploaded_file)
-    df.columns = df.columns.str.strip()
+if uploaded_csv is not None:
 
-    # Speed optimization
-    if len(df) > 20000:
-        df = df.sample(20000, random_state=42)
+    data_table = pd.read_csv(uploaded_csv)
+    data_table.columns = data_table.columns.str.strip()
 
-    st.subheader("Dataset Preview")
-    st.dataframe(df.head(), width="stretch")
+    # Limit size for performance
+    if len(data_table) > 20000:
+        data_table = data_table.sample(20000, random_state=42)
 
-    target_column = st.selectbox("Select Target Column", df.columns)
+    st.markdown("### Dataset Sample")
+    st.dataframe(data_table.head(), use_container_width=True)
 
-    if target_column:
+    target_field = st.selectbox("Choose the target variable", data_table.columns)
 
-        X = df.drop(target_column, axis=1)
-        y = df[target_column]
+    if target_field:
 
-        # Encode target if needed
-        if y.dtype == "object":
-            le = LabelEncoder()
-            y = le.fit_transform(y)
+        features = data_table.drop(columns=[target_field])
+        target = data_table[target_field]
 
-        model_name = st.selectbox(
-            "Select Model",
+        # Encode labels if categorical
+        if target.dtype == "object":
+            encoder = LabelEncoder()
+            target = encoder.fit_transform(target)
+
+        model_choice = st.selectbox(
+            "Choose a classification algorithm",
             [
                 "Logistic Regression",
                 "Decision Tree",
@@ -60,80 +70,99 @@ if uploaded_file:
             ]
         )
 
-        test_size = st.slider("Test Size", 0.1, 0.5, 0.2)
+        split_ratio = st.slider("Select test data proportion", 0.1, 0.5, 0.2)
 
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y,
-            test_size=test_size,
+            features,
+            target,
+            test_size=split_ratio,
             random_state=42
         )
 
-        st.write("Training model...")
+        # -------- MODEL REFRESH STEP --------
+        if st.button("Refresh Model"):
 
-        model = get_model(model_name, X_train)
-        model.fit(X_train, y_train)
+            st.session_state["current_model"] = get_model(model_choice, X_train)
+            st.success("Model refreshed successfully")
 
-        preds = model.predict(X_test)
+        # -------- APPLY MODEL BUTTON --------
+        if "current_model" in st.session_state:
 
-        # Probability (if available)
-        if hasattr(model, "predict_proba"):
-            probs = model.predict_proba(X_test)[:, 1]
-            auc = roc_auc_score(y_test, probs)
-        else:
-            auc = None
+            if st.button("Apply Model"):
 
-        # ---------------- METRICS ----------------
-        accuracy = accuracy_score(y_test, preds)
-        precision = precision_score(y_test, preds, average="weighted")
-        recall = recall_score(y_test, preds, average="weighted")
-        f1 = f1_score(y_test, preds, average="weighted")
-        mcc = matthews_corrcoef(y_test, preds)
+                with st.spinner("Model is running. Please wait..."):
 
-        cv_scores = cross_val_score(
-            get_model(model_name, X_train),
-            X,
-            y,
-            cv=3,
-            n_jobs=-1
-        )
+                    active_model = st.session_state["current_model"]
 
-        # ---------------- DISPLAY METRICS ----------------
-        st.markdown("## 📈 Model Performance")
+                    active_model.fit(X_train, y_train)
+                    predictions = active_model.predict(X_test)
 
-        col1, col2, col3, col4, col5, col6 = st.columns(6)
+                    # Probability if supported
+                    if hasattr(active_model, "predict_proba"):
+                        probabilities = active_model.predict_proba(X_test)[:, 1]
+                        auc_value = roc_auc_score(y_test, probabilities)
+                    else:
+                        auc_value = None
 
-        col1.metric("Accuracy", f"{accuracy:.4f}")
-        col2.metric("Precision", f"{precision:.4f}")
-        col3.metric("Recall", f"{recall:.4f}")
-        col4.metric("F1 Score", f"{f1:.4f}")
-        col5.metric("MCC", f"{mcc:.4f}")
-        col6.metric("CV Accuracy", f"{cv_scores.mean():.4f}")
+                    # -------- PERFORMANCE METRICS --------
+                    acc = accuracy_score(y_test, predictions)
+                    prec = precision_score(y_test, predictions, average="weighted")
+                    rec = recall_score(y_test, predictions, average="weighted")
+                    f1_val = f1_score(y_test, predictions, average="weighted")
+                    mcc_val = matthews_corrcoef(y_test, predictions)
 
-        if auc is not None:
-            st.metric("ROC AUC", f"{auc:.4f}")
+                    cv_results = cross_val_score(
+                        get_model(model_choice, X_train),
+                        features,
+                        target,
+                        cv=3,
+                        n_jobs=-1
+                    )
 
-        # ---------------- CONFUSION MATRIX ----------------
-        st.markdown("## 🧮 Confusion Matrix")
+                st.markdown("## Model Evaluation")
 
-        cm = confusion_matrix(y_test, preds)
+                m1, m2, m3, m4, m5, m6 = st.columns(6)
 
-        fig, ax = plt.subplots()
-        sns.heatmap(
-            cm,
-            annot=True,
-            fmt="d",
-            cmap="Blues",
-            linewidths=1,
-            linecolor="gray"
-        )
-        ax.set_xlabel("Predicted")
-        ax.set_ylabel("Actual")
-        st.pyplot(fig)
+                m1.metric("Accuracy", f"{acc:.4f}")
+                m2.metric("Precision", f"{prec:.4f}")
+                m3.metric("Recall", f"{rec:.4f}")
+                m4.metric("F1 Score", f"{f1_val:.4f}")
+                m5.metric("MCC", f"{mcc_val:.4f}")
+                m6.metric("CV Score", f"{cv_results.mean():.4f}")
 
-        # ---------------- CLASSIFICATION REPORT ----------------
-        st.markdown("## 📋 Classification Report")
+                if auc_value is not None:
+                    st.metric("ROC AUC", f"{auc_value:.4f}")
 
-        report = classification_report(y_test, preds, output_dict=True)
-        report_df = pd.DataFrame(report).transpose()
+                # -------- CONFUSION MATRIX --------
+                st.markdown("## Confusion Matrix")
 
-        st.dataframe(report_df.round(4), width="stretch")
+                matrix = confusion_matrix(y_test, predictions)
+
+                fig, ax = plt.subplots()
+
+                sns.heatmap(
+                    matrix,
+                    annot=True,
+                    fmt="d",
+                    cmap="coolwarm",
+                    linewidths=1,
+                    linecolor="black"
+                )
+
+                ax.set_xlabel("Predicted Label")
+                ax.set_ylabel("Actual Label")
+
+                st.pyplot(fig)
+
+                # -------- CLASSIFICATION REPORT --------
+                st.markdown("## Detailed Classification Report")
+
+                report_dict = classification_report(
+                    y_test,
+                    predictions,
+                    output_dict=True
+                )
+
+                report_frame = pd.DataFrame(report_dict).transpose()
+
+                st.dataframe(report_frame.round(4), use_container_width=True)
