@@ -25,9 +25,9 @@ from models import fetch_pipeline
 
 
 # -------------------- PAGE CONFIG --------------------
-st.set_page_config(page_title="ML Classification Studio", layout="wide")
+st.set_page_config(page_title="Breast Cancer Diagnostic Dashboard", layout="wide")
 
-st.title("Machine Learning Classification Studio")
+st.title("Breast Cancer Diagnostic Dashboard")
 
 
 # -------------------- DATA UPLOAD --------------------
