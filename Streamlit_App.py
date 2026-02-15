@@ -21,7 +21,7 @@ from sklearn.metrics import (
 )
 
 # Updated import based on new model file
-from model.models import fetch_pipeline
+from models import fetch_pipeline
 
 
 # -------------------- PAGE CONFIG --------------------
